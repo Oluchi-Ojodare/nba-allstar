@@ -93,6 +93,24 @@ def outcome_text(r) -> str:
     return "—"
 
 
+HEADSHOT = "https://cdn.nba.com/headshots/nba/latest/1040x760/{}.png"
+FALLBACK = "https://cdn.nba.com/headshots/nba/latest/1040x760/fallback.png"
+
+
+def headshot_url(nba_id):
+    """Official NBA.com headshot, loaded by the viewer's browser (nothing is stored in the app).
+    nba_id is the NBA.com person id that came with the salary data."""
+    if "nba_id" not in scores.columns or pd.isna(nba_id):
+        return None
+    return HEADSHOT.format(int(nba_id))
+
+
+def photo(nba_id, width: int = 180) -> None:
+    url = headshot_url(nba_id) or FALLBACK
+    st.markdown(f'<img src="{url}" width="{width}" style="border-radius:8px;background:#f0f2f6" '
+                f'onerror="this.onerror=null;this.src=\'{FALLBACK}\';">', unsafe_allow_html=True)
+
+
 def tier(score: float) -> str:
     return "High potential" if score >= 97 else "Watch list" if score >= 90 else "—"
 
@@ -150,15 +168,17 @@ if page == "Emerging Players":
            "Salary pct": lambda x: x["salary_pctile"].round(0),
            "Score": lambda x: x[score_col],
            "Tier": lambda x: x[score_col].map(tier),
-           "All-Star within 2 seasons": lambda x: x.apply(outcome_text, axis=1)})
-    cols = ["rank", "player", "team", "pos", "age", "Salary ($M)", "Salary pct", "pts_per_game",
+           "All-Star within 2 seasons": lambda x: x.apply(outcome_text, axis=1),
+           "Photo": lambda x: x.get("nba_id", pd.Series(index=x.index, dtype=float)).map(headshot_url)})
+    cols = ["rank", "Photo", "player", "team", "pos", "age", "Salary ($M)", "Salary pct", "pts_per_game",
             "per", "bpm", "Score", "Tier"] + (["All-Star within 2 seasons"] if show_outcome else [])
     st.dataframe(
         view[cols].rename(columns={"rank": "Rank", "player": "Player", "team": "Team", "pos": "Pos",
                                    "age": "Age", "pts_per_game": "PTS", "per": "PER", "bpm": "BPM"}),
         hide_index=True, width="stretch",
         column_config={"Score": st.column_config.ProgressColumn("Score", min_value=0, max_value=100,
-                                                                format="%.1f")})
+                                                                format="%.1f"),
+                       "Photo": st.column_config.ImageColumn("", width="small")})
     st.caption("Tiers: High potential = score 97+, Watch list = 90-97.")
 
     st.subheader("Score vs salary")
@@ -185,8 +205,13 @@ elif page == "Player Predictor":
     player = c2.selectbox("Player (sorted by score)", names)
     r = d[d["player"] == player].iloc[0]
 
-    m = st.columns(4)
-    m[0].metric("Score", f"{r[score_col]:.1f} / 100")
+    pic, info = st.columns([1, 4])
+    with pic:
+        photo(r.get("nba_id"))
+    with info:
+        st.markdown(f"### {r['player']}  \n{r['team']} · {r['pos']} · age {int(r['age'])} · {season_label(season)}")
+        m = st.columns(4)
+    m[0].metric("Score (of 100)", f"{r[score_col]:.1f}")
     m[1].metric("Rank", f"{int(r['rank'])} of {len(d)}")
     m[2].metric("Salary", f"${r['salary'] / 1e6:.1f}M" if pd.notna(r["salary"]) else "n/a")
     m[3].metric("Salary percentile", f"{r['salary_pctile']:.0f}" if pd.notna(r["salary_pctile"]) else "n/a")
