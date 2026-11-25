@@ -97,18 +97,24 @@ HEADSHOT = "https://cdn.nba.com/headshots/nba/latest/1040x760/{}.png"
 FALLBACK = "https://cdn.nba.com/headshots/nba/latest/1040x760/fallback.png"
 
 
-def headshot_url(nba_id):
-    """Official NBA.com headshot, loaded by the viewer's browser (nothing is stored in the app).
-    nba_id is the NBA.com person id that came with the salary data."""
-    if "nba_id" not in scores.columns or pd.isna(nba_id):
-        return None
-    return HEADSHOT.format(int(nba_id))
+BBREF_HEADSHOT = "https://www.basketball-reference.com/req/202106291/images/headshots/{}.jpg"
 
 
-def photo(nba_id, width: int = 180) -> None:
-    url = headshot_url(nba_id) or FALLBACK
-    st.markdown(f'<img src="{url}" width="{width}" style="border-radius:8px;background:#f0f2f6" '
-                f'onerror="this.onerror=null;this.src=\'{FALLBACK}\';">', unsafe_allow_html=True)
+def headshot_url(nba_id, player_id=None):
+    """Player photo URL, loaded by the viewer's browser (nothing is stored in the app).
+    Uses the official NBA.com headshot when the model file has the player's NBA.com id,
+    otherwise the Basketball-Reference headshot for his player_id."""
+    if pd.notna(nba_id):
+        return HEADSHOT.format(int(nba_id))
+    if isinstance(player_id, str) and player_id:
+        return BBREF_HEADSHOT.format(player_id)
+    return None
+
+
+def photo(nba_id, player_id=None, width: int = 180) -> None:
+    url = headshot_url(nba_id, player_id) or FALLBACK
+    st.markdown(f'<img src="{url}" width="{width}" style="border-radius:8px;background:#f0f2f6">',
+                unsafe_allow_html=True)
 
 
 def tier(score: float) -> str:
@@ -169,7 +175,8 @@ if page == "Emerging Players":
            "Score": lambda x: x[score_col],
            "Tier": lambda x: x[score_col].map(tier),
            "All-Star within 2 seasons": lambda x: x.apply(outcome_text, axis=1),
-           "Photo": lambda x: x.get("nba_id", pd.Series(index=x.index, dtype=float)).map(headshot_url)})
+           "Photo": lambda x: [headshot_url(n, p) for n, p in
+                               zip(x.get("nba_id", pd.Series(index=x.index, dtype=float)), x["player_id"])]})
     cols = ["rank", "Photo", "player", "team", "pos", "age", "Salary ($M)", "Salary pct", "pts_per_game",
             "per", "bpm", "Score", "Tier"] + (["All-Star within 2 seasons"] if show_outcome else [])
     st.dataframe(
@@ -207,7 +214,7 @@ elif page == "Player Predictor":
 
     pic, info = st.columns([1, 4])
     with pic:
-        photo(r.get("nba_id"))
+        photo(r.get("nba_id"), r["player_id"])
     with info:
         st.markdown(f"### {r['player']}  \n{r['team']} · {r['pos']} · age {int(r['age'])} · {season_label(season)}")
         m = st.columns(4)
